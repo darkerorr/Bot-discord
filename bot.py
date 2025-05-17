@@ -63,10 +63,16 @@ async def on_ready():
 
 @bot.event
 async def on_member_join(member):
+    channel = discord.utils.get(member.guild.text_channels, name="arrivees-departs")
+    if channel:
+        await channel.send(f"👋 {member.mention} a rejoint le serveur !")
     await log_action(member.guild, f"✅ **{member}** a rejoint le serveur.")
 
 @bot.event
 async def on_member_remove(member):
+    channel = discord.utils.get(member.guild.text_channels, name="arrivees-departs")
+    if channel:
+        await channel.send(f"😢 {member.name} a quitté le serveur.")
     await log_action(member.guild, f"❌ **{member}** a quitté ou a été kick/ban.")
 
 @bot.event
@@ -201,12 +207,9 @@ async def giveaway(ctx, duration: int, *, prize: str):
     else:
         await ctx.send("Personne n'a participé au giveaway.")
 
-# --- AJOUT DE LA COMMANDE UNBAN ---
-
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def unban(ctx, *, member):
-    """Débannir un utilisateur via son pseudo#tag."""
     banned_users = await ctx.guild.bans()
     try:
         member_name, member_discriminator = member.split('#')
@@ -222,15 +225,10 @@ async def unban(ctx, *, member):
             return
     await ctx.send(f"❌ Utilisateur {member} non trouvé dans la liste des bannis.")
 
-# --- AJOUT DE LA COMMANDE CREATE ALL (création rôles + salons) ---
-
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def create_all(ctx):
-    """Créer automatiquement les rôles et salons dédiés pour chaque jeu et admin/mod."""
     guild = ctx.guild
-    
-    # Rôles à créer
     roles_to_create = [
         {"name": "Admin", "permissions": discord.Permissions(administrator=True)},
         {"name": "Mod", "permissions": discord.Permissions(manage_messages=True, kick_members=True, ban_members=True)},
@@ -241,41 +239,61 @@ async def create_all(ctx):
         {"name": "NOVA"},
         {"name": "VRM"},
     ]
-
-    # Création des rôles (si inexistants)
     for r in roles_to_create:
         existing = discord.utils.get(guild.roles, name=r["name"])
         if not existing:
             perms = r.get("permissions", discord.Permissions.none())
             await guild.create_role(name=r["name"], permissions=perms)
-    
-    # Catégories & salons à créer
     jeux = ["Fortnite", "Valorant", "Rocket League", "EON", "NOVA", "VRM"]
     types_salon = {
         "textuels": ["discussion", "partage-photos", "idees"],
         "vocaux": ["Vocal 1", "Vocal 2", "Vocal 3"]
     }
-
     for jeu in jeux:
         cat = discord.utils.get(guild.categories, name=jeu)
         if not cat:
             cat = await guild.create_category(jeu)
-        
-        # Textuels
         for salon in types_salon["textuels"]:
             chan_name = f"{jeu.lower()}-{salon}"
-            existing_chan = discord.utils.get(guild.text_channels, name=chan_name)
-            if not existing_chan:
+            if not discord.utils.get(guild.text_channels, name=chan_name):
                 await guild.create_text_channel(chan_name, category=cat)
-        
-        # Vocaux
         for vocal in types_salon["vocaux"]:
             chan_name = f"{jeu.lower()}-{vocal.lower().replace(' ', '-')}"
-            existing_chan = discord.utils.get(guild.voice_channels, name=chan_name)
-            if not existing_chan:
+            if not discord.utils.get(guild.voice_channels, name=chan_name):
                 await guild.create_voice_channel(chan_name, category=cat)
-
     await ctx.send("✅ Tous les rôles et salons ont été créés ou étaient déjà présents.")
     await log_action(guild, f"✅ {ctx.author} a lancé la commande !create_all, rôles et salons créés.")
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def arrive(ctx):
+    guild = ctx.guild
+    channel_name = "arrivees-departs"
+    existing_channel = discord.utils.get(guild.text_channels, name=channel_name)
+
+    if existing_channel is None:
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(send_messages=False, read_messages=True),
+            guild.me: discord.PermissionOverwrite(send_messages=True, read_messages=True)
+        }
+        channel = await guild.create_text_channel(channel_name, overwrites=overwrites)
+        await ctx.send(f"✅ Salon `{channel_name}` créé avec succès.")
+        await log_action(guild, f"📢 Salon `{channel_name}` créé par {ctx.author}.")
+    else:
+        await ctx.send(f"ℹ️ Le salon `{channel_name}` existe déjà.")
+
+@bot.command()
+@commands.has_permissions(kick_members=True)
+async def kick(ctx, member: discord.Member, *, reason="Aucune raison donnée"):
+    await ctx.guild.kick(member, reason=reason)
+    await ctx.send(f"👢 {member.mention} a été expulsé. Raison : {reason}")
+    await log_action(ctx.guild, f"👢 {member} a été kick par {ctx.author}. Raison : {reason}")
+
+@bot.command()
+@commands.has_permissions(ban_members=True)
+async def ban(ctx, member: discord.Member, *, reason="Aucune raison donnée"):
+    await ctx.guild.ban(member, reason=reason)
+    await ctx.send(f"🚫 {member.mention} a été banni. Raison : {reason}")
+    await log_action(ctx.guild, f"🚫 {member} a été banni par {ctx.author}. Raison : {reason}")
 
 bot.run(TOKEN)
